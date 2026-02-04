@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Clock, BookOpen, Coffee, Dumbbell, Moon, Sun,
   Heart, Monitor, Target, Flame, Play, Pause, Square,
-  Plus, Trash2, Check, Volume2, VolumeX, Edit3, X, Music, Bell, Link
+  Plus, Trash2, Check, Volume2, VolumeX, Edit3, X, Music, Bell, Link, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from './AuthContext';
 
 // ═══════════════════════════════════════════════════════════
 // ACADEMIC SCHEDULE (Your fixed timetable from the image)
@@ -116,6 +117,7 @@ const generateDeepWorkBlocks = (academicSchedule) => {
 // ═══════════════════════════════════════════════════════════
 
 const App = () => {
+  const { user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeView, setActiveView] = useState('dashboard');
 
@@ -878,6 +880,13 @@ const App = () => {
               Week View
             </button>
           </div>
+          <button
+            onClick={logout}
+            className="icon-btn"
+            title={`Sign out${user?.displayName ? ` (${user.displayName.split(' ')[0]})` : ''}`}
+          >
+            <LogOut size={18} />
+          </button>
         </div>
       </header>
 
