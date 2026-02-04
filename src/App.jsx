@@ -2,16 +2,17 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Clock, BookOpen, Coffee, Dumbbell, Moon, Sun,
   Heart, Monitor, Target, Flame, Play, Pause, Square,
-  Plus, Trash2, Check, Volume2, VolumeX, Edit3, X, Music, Bell, Link, LogOut
+  Plus, Trash2, Check, Volume2, VolumeX, Edit3, X, Music, Bell, Link, LogOut, Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './AuthContext';
+import TimetableUpload from './TimetableUpload';
 
 // ═══════════════════════════════════════════════════════════
-// ACADEMIC SCHEDULE (Your fixed timetable from the image)
+// DEFAULT ACADEMIC SCHEDULE (fallback if no uploaded timetable)
 // ═══════════════════════════════════════════════════════════
 
-const ACADEMIC_SCHEDULE = {
+const DEFAULT_ACADEMIC_SCHEDULE = {
   Monday: [
     { time: '09:00', end: '09:50', title: 'MATH F102', type: 'L3', location: 'F104' },
     { time: '10:00', end: '10:50', title: 'PHY F101', type: 'L2', location: 'F105' },
@@ -131,7 +132,7 @@ const App = () => {
   // Music State
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicUrl, setMusicUrl] = useState(() => {
-    return localStorage.getItem('musicUrl') || 'https://www.youtube.com/watch?v=6rvv8bU3pKA';
+    return localStorage.getItem('musicUrl') || 'https://youtu.be/6rvv8bU3pKA?list=RD6rvv8bU3pKA';
   });
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [tempMusicUrl, setTempMusicUrl] = useState('');
@@ -147,6 +148,16 @@ const App = () => {
   });
   const [newTodo, setNewTodo] = useState('');
 
+  // Academic Schedule (from localStorage or default)
+  const [academicSchedule, setAcademicSchedule] = useState(() => {
+    try {
+      const saved = localStorage.getItem('academicSchedule');
+      return saved ? JSON.parse(saved) : DEFAULT_ACADEMIC_SCHEDULE;
+    } catch {
+      return DEFAULT_ACADEMIC_SCHEDULE;
+    }
+  });
+
   // Weekend Schedule (editable)
   const [weekendSchedule, setWeekendSchedule] = useState(() => {
     try {
@@ -156,6 +167,19 @@ const App = () => {
       return { Saturday: [], Sunday: [] };
     }
   });
+
+  // Weekday User Blocks (personal blocks on Mon-Fri, separate from academic)
+  const [weekdayUserBlocks, setWeekdayUserBlocks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('weekdayUserBlocks');
+      return saved ? JSON.parse(saved) : { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [] };
+    } catch {
+      return { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [] };
+    }
+  });
+
+  // Timetable Upload Modal
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Drag state for weekend editing
   const [isDragging, setIsDragging] = useState(false);
@@ -195,10 +219,20 @@ const App = () => {
     localStorage.setItem('productivity-todos', JSON.stringify(todos));
   }, [todos]);
 
+  // Save academic schedule to localStorage
+  useEffect(() => {
+    localStorage.setItem('academicSchedule', JSON.stringify(academicSchedule));
+  }, [academicSchedule]);
+
   // Save weekend schedule to localStorage
   useEffect(() => {
     localStorage.setItem('weekendSchedule', JSON.stringify(weekendSchedule));
   }, [weekendSchedule]);
+
+  // Save weekday user blocks to localStorage
+  useEffect(() => {
+    localStorage.setItem('weekdayUserBlocks', JSON.stringify(weekdayUserBlocks));
+  }, [weekdayUserBlocks]);
 
   // Save music URL
   useEffect(() => {
@@ -234,7 +268,7 @@ const App = () => {
     if (!notificationsEnabled) return;
 
     const currentDayName = DAYS[currentTime.getDay() === 0 ? 6 : currentTime.getDay() - 1];
-    const schedule = ACADEMIC_SCHEDULE[currentDayName] || [];
+    const schedule = academicSchedule[currentDayName] || [];
     const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
     schedule.forEach(classItem => {
@@ -344,6 +378,7 @@ const App = () => {
   const saveMusicUrl = () => {
     if (tempMusicUrl.trim()) {
       setMusicUrl(tempMusicUrl.trim());
+      showToast('Music URL Saved', 'Your focus music has been updated. Start a focus session to play it.');
     }
     setShowMusicModal(false);
   };
@@ -377,9 +412,10 @@ const App = () => {
     setTodos(prevTodos => prevTodos.filter(t => t.id !== id));
   };
 
-  // Weekend drag handlers
-  const handleMouseDown = (day, slotIndex) => {
-    if (day !== 'Saturday' && day !== 'Sunday') return;
+  // Drag handlers for creating blocks (works on all days, but blocks creation on academic slots)
+  const handleMouseDown = (day, slotIndex, hasAcademicBlock = false) => {
+    // Don't start drag if there's an academic block at this slot
+    if (hasAcademicBlock) return;
     setIsDragging(true);
     setDragDay(day);
     setDragStart(slotIndex);
@@ -420,37 +456,69 @@ const App = () => {
 
   const handleCreateEvent = () => {
     if (newEvent.title.trim() && newEvent.day) {
+      const isWeekend = newEvent.day === 'Saturday' || newEvent.day === 'Sunday';
+
       if (newEvent.id) {
         // Editing existing event
-        setWeekendSchedule(prev => ({
-          ...prev,
-          [newEvent.day]: prev[newEvent.day].map(b =>
-            b.id === newEvent.id
-              ? {
-                ...b,
-                time: newEvent.startTime,
-                end: newEvent.endTime,
-                title: newEvent.title.trim(),
-                location: newEvent.description || '',
-                color: newEvent.color
-              }
-              : b
-          )
-        }));
+        if (isWeekend) {
+          setWeekendSchedule(prev => ({
+            ...prev,
+            [newEvent.day]: prev[newEvent.day].map(b =>
+              b.id === newEvent.id
+                ? {
+                  ...b,
+                  time: newEvent.startTime,
+                  end: newEvent.endTime,
+                  title: newEvent.title.trim(),
+                  location: newEvent.description || '',
+                  color: newEvent.color
+                }
+                : b
+            )
+          }));
+        } else {
+          // Editing weekday user block
+          setWeekdayUserBlocks(prev => ({
+            ...prev,
+            [newEvent.day]: prev[newEvent.day].map(b =>
+              b.id === newEvent.id
+                ? {
+                  ...b,
+                  time: newEvent.startTime,
+                  end: newEvent.endTime,
+                  title: newEvent.title.trim(),
+                  location: newEvent.description || '',
+                  color: newEvent.color
+                }
+                : b
+            )
+          }));
+        }
       } else {
         // Creating new event
-        setWeekendSchedule(prev => ({
-          ...prev,
-          [newEvent.day]: [...prev[newEvent.day], {
-            id: Date.now(),
-            time: newEvent.startTime,
-            end: newEvent.endTime,
-            title: newEvent.title.trim(),
-            type: 'Custom',
-            location: newEvent.description || '',
-            color: newEvent.color
-          }]
-        }));
+        const newBlock = {
+          id: Date.now(),
+          time: newEvent.startTime,
+          end: newEvent.endTime,
+          title: newEvent.title.trim(),
+          type: 'Custom',
+          location: newEvent.description || '',
+          color: newEvent.color,
+          isUserBlock: true
+        };
+
+        if (isWeekend) {
+          setWeekendSchedule(prev => ({
+            ...prev,
+            [newEvent.day]: [...prev[newEvent.day], newBlock]
+          }));
+        } else {
+          // Add to weekday user blocks
+          setWeekdayUserBlocks(prev => ({
+            ...prev,
+            [newEvent.day]: [...(prev[newEvent.day] || []), newBlock]
+          }));
+        }
       }
       setShowCreateModal(false);
       setNewEvent({ id: null, title: '', day: null, startTime: '', endTime: '', description: '', color: 'teal' });
@@ -464,10 +532,20 @@ const App = () => {
 
   const handleDeleteEvent = () => {
     if (newEvent.id && newEvent.day) {
-      setWeekendSchedule(prev => ({
-        ...prev,
-        [newEvent.day]: prev[newEvent.day].filter(b => b.id !== newEvent.id)
-      }));
+      const isWeekend = newEvent.day === 'Saturday' || newEvent.day === 'Sunday';
+
+      if (isWeekend) {
+        setWeekendSchedule(prev => ({
+          ...prev,
+          [newEvent.day]: prev[newEvent.day].filter(b => b.id !== newEvent.id)
+        }));
+      } else {
+        // Delete from weekday user blocks
+        setWeekdayUserBlocks(prev => ({
+          ...prev,
+          [newEvent.day]: prev[newEvent.day].filter(b => b.id !== newEvent.id)
+        }));
+      }
       setShowCreateModal(false);
       setNewEvent({ id: null, title: '', day: null, startTime: '', endTime: '', description: '', color: 'teal' });
     }
@@ -482,14 +560,18 @@ const App = () => {
     e.stopPropagation();
     e.preventDefault();
 
-    // For weekday classes, show read-only toast
-    if (day !== 'Saturday' && day !== 'Sunday') {
-      setToastNotification({ title: 'Read Only', body: 'Academic schedule is fixed.', id: Date.now() });
+    // Check if this is an academic block (not editable) or a user block (editable)
+    const isWeekend = day === 'Saturday' || day === 'Sunday';
+    const isUserBlock = block.isUserBlock || isWeekend;
+
+    // For academic blocks on weekdays, show read-only toast
+    if (!isUserBlock) {
+      setToastNotification({ title: 'Read Only', body: 'Academic schedule cannot be edited. Upload a new timetable to change it.', id: Date.now() });
       setTimeout(() => setToastNotification(null), 3000);
       return;
     }
 
-    // Open the gcal modal with this block's data
+    // Open the gcal modal with this block's data (for user blocks)
     setNewEvent({
       id: block.id,
       title: block.title,
@@ -547,25 +629,39 @@ const App = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Get full schedule for a day (academic + deep work blocks)
+  // Handler for uploaded timetable
+  const handleScheduleExtracted = (newSchedule) => {
+    setAcademicSchedule(newSchedule);
+    showToast('Timetable Updated', 'Your academic schedule has been updated from the uploaded image.');
+  };
+
+  // Get full schedule for a day (academic + user blocks + deep work blocks)
   const getFullScheduleForDay = (day) => {
     if (day === 'Saturday' || day === 'Sunday') {
       return weekendSchedule[day] || [];
     }
-    const academic = ACADEMIC_SCHEDULE[day] || [];
-    const deepWork = generateDeepWorkBlocks(academic);
-    return [...academic, ...deepWork].sort((a, b) => {
+    const academic = academicSchedule[day] || [];
+    const userBlocks = weekdayUserBlocks[day] || [];
+    const allBlocks = [...academic, ...userBlocks];
+    const deepWork = generateDeepWorkBlocks(allBlocks);
+    return [...allBlocks, ...deepWork].sort((a, b) => {
       const aMin = parseInt(a.time.split(':')[0]) * 60 + parseInt(a.time.split(':')[1]);
       const bMin = parseInt(b.time.split(':')[0]) * 60 + parseInt(b.time.split(':')[1]);
       return aMin - bMin;
     });
   };
 
-  // Check if a time slot has a class
+  // Check if a time slot has a class (returns both academic and user blocks)
   const getClassAtSlot = (day, slotIndex) => {
-    const schedule = day === 'Saturday' || day === 'Sunday'
-      ? weekendSchedule[day] || []
-      : ACADEMIC_SCHEDULE[day] || [];
+    let schedule;
+    if (day === 'Saturday' || day === 'Sunday') {
+      schedule = weekendSchedule[day] || [];
+    } else {
+      // Combine academic schedule and user blocks for weekdays
+      const academic = (academicSchedule[day] || []).map(item => ({ ...item, isAcademic: true }));
+      const userBlocks = (weekdayUserBlocks[day] || []).map(item => ({ ...item, isUserBlock: true }));
+      schedule = [...academic, ...userBlocks];
+    }
 
     const slotTime = TIME_SLOTS[slotIndex];
     const slotMinutes = parseInt(slotTime.split(':')[0]) * 60;
@@ -583,29 +679,50 @@ const App = () => {
     return null;
   };
 
+  // Check if a slot has an academic block (for blocking drag)
+  const hasAcademicBlockAtSlot = (day, slotIndex) => {
+    if (day === 'Saturday' || day === 'Sunday') return false;
+    const academic = academicSchedule[day] || [];
+    const slotTime = TIME_SLOTS[slotIndex];
+    const slotMinutes = parseInt(slotTime.split(':')[0]) * 60;
+
+    for (const item of academic) {
+      const startMinutes = parseInt(item.time.split(':')[0]) * 60 + parseInt(item.time.split(':')[1]);
+      const endMinutes = parseInt(item.end.split(':')[0]) * 60 + parseInt(item.end.split(':')[1]);
+      if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const currentDayName = DAYS[currentTime.getDay() === 0 ? 6 : currentTime.getDay() - 1];
 
   return (
     <div className="command-center">
-      {/* YouTube Music Player - positioned off-screen to avoid cross-origin errors */}
+      {/* YouTube Music Player - invisible but in viewport for autoplay to work */}
       {musicPlaying && (
-        <div style={{
-          position: 'fixed',
-          left: '-9999px',
-          top: '-9999px',
-          width: '1px',
-          height: '1px',
-          overflow: 'hidden',
-          pointerEvents: 'none'
-        }}>
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '0px',
+            right: '0px',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            pointerEvents: 'none',
+            zIndex: -1
+          }}
+        >
           <iframe
+            key={musicUrl}
             src={getYouTubeEmbedUrl(musicUrl)}
             allow="autoplay; encrypted-media"
+            allowFullScreen
             title="Background Music"
-            width="1"
-            height="1"
-            frameBorder="0"
-            referrerPolicy="no-referrer"
+            width="300"
+            height="200"
+            style={{ border: 'none' }}
           />
         </div>
       )}
@@ -866,6 +983,13 @@ const App = () => {
           >
             <Bell size={18} />
           </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="icon-btn"
+            title="Upload academic timetable"
+          >
+            <Upload size={18} />
+          </button>
           <div className="nav-tabs">
             <button
               className={`nav-btn ${activeView === 'dashboard' ? 'active' : ''}`}
@@ -1052,7 +1176,13 @@ const App = () => {
               className="timetable-view"
             >
               <div className="timetable-hint">
-                💡 <strong>Sat/Sun:</strong> Click and drag to create blocks. Right-click to delete.
+                💡 <strong>All days:</strong> Click and drag to add personal blocks. Academic blocks are read-only.
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="upload-hint-btn"
+                >
+                  📸 Upload Timetable
+                </button>
               </div>
 
               {/* Week Timetable Grid */}
@@ -1066,7 +1196,7 @@ const App = () => {
                 {DAYS.map(day => (
                   <div
                     key={day}
-                    className={`timetable-header-cell ${day === currentDayName ? 'current' : ''} ${(day === 'Saturday' || day === 'Sunday') ? 'editable' : ''}`}
+                    className={`timetable-header-cell ${day === currentDayName ? 'current' : ''} editable`}
                   >
                     {day.slice(0, 3)}
                   </div>
@@ -1079,6 +1209,7 @@ const App = () => {
                     {DAYS.map(day => {
                       const classInfo = getClassAtSlot(day, slotIndex);
                       const isWeekend = day === 'Saturday' || day === 'Sunday';
+                      const hasAcademic = hasAcademicBlockAtSlot(day, slotIndex);
                       const isDragTarget = isDragging && dragDay === day &&
                         slotIndex >= Math.min(dragStart, dragEnd) &&
                         slotIndex <= Math.max(dragStart, dragEnd);
@@ -1088,21 +1219,24 @@ const App = () => {
                         return null;
                       }
 
+                      // Determine if this block is editable (user block or weekend)
+                      const isEditable = classInfo && (classInfo.isUserBlock || isWeekend);
+
                       return (
                         <div
                           key={day}
-                          className={`timetable-cell ${classInfo ? 'has-class' : ''} ${isWeekend ? 'weekend' : ''} ${isDragTarget ? 'drag-target' : ''}`}
+                          className={`timetable-cell ${classInfo ? 'has-class' : ''} ${isWeekend ? 'weekend' : ''} ${isDragTarget ? 'drag-target' : ''} ${hasAcademic ? 'has-academic' : ''}`}
                           style={classInfo?.span > 1 ? { gridRow: `span ${classInfo.span}` } : {}}
-                          onMouseDown={() => isWeekend && !classInfo && handleMouseDown(day, slotIndex)}
+                          onMouseDown={() => !classInfo && handleMouseDown(day, slotIndex, hasAcademic)}
                           onMouseMove={() => handleMouseMove(slotIndex)}
                           onContextMenu={(e) => classInfo && handleContextMenu(e, day, classInfo.id)}
                           onDoubleClick={(e) => classInfo && handleBlockDoubleClick(e, day, classInfo)}
                         >
                           {classInfo && (
                             <div
-                              className={`class-block ${classInfo.isDeepWork ? 'deep-work-block' : ''}`}
+                              className={`class-block ${classInfo.isDeepWork ? 'deep-work-block' : ''} ${classInfo.isUserBlock ? 'user-block' : ''} ${classInfo.isAcademic ? 'academic-block' : ''}`}
                               onClick={(e) => handleBlockClick(e, day, classInfo)}
-                              style={{ cursor: (day === 'Saturday' || day === 'Sunday') ? 'pointer' : 'default' }}
+                              style={{ cursor: isEditable ? 'pointer' : 'default' }}
                             >
                               <span className="class-title">{classInfo.title}</span>
                               <span className="class-meta">
@@ -1181,6 +1315,13 @@ const App = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Timetable Upload Modal */}
+      <TimetableUpload
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onScheduleExtracted={handleScheduleExtracted}
+      />
     </div >
   );
 };
