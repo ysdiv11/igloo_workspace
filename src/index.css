@@ -923,6 +923,35 @@ body {
     margin-top: 0.125rem;
 }
 
+/* Evening / Night Section Header */
+.evening-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-top: 1.5rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--accent-warm);
+    background: linear-gradient(135deg, rgba(232, 155, 108, 0.08) 0%, transparent 60%);
+    border: 1px solid rgba(232, 155, 108, 0.2);
+    border-radius: var(--radius-md);
+    letter-spacing: 0.02em;
+}
+
+.evening-section-header svg {
+    opacity: 0.8;
+}
+
+/* Make all timetable cells in the evening grid interactive */
+.timetable-cell {
+    cursor: crosshair;
+}
+
+.timetable-cell.has-academic {
+    cursor: default;
+}
+
 /* ═══════════════════════════════════════════════════════════
    UTILITIES
    ═══════════════════════════════════════════════════════════ */
